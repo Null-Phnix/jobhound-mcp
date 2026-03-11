@@ -1,0 +1,44 @@
+# JobHound configuration — copy to config.yaml and fill in your values
+
+profile:
+  resume: ./profile/resume.md
+  skills: ./profile/skills.yaml
+  name: "Your Name"
+  email: "you@example.com"
+  phone: "+1-555-000-0000"
+
+daemon:
+  interval_hours: 6
+  db_path: ./jobhound.db
+
+score:
+  threshold: 30
+  sonnet_threshold: 70
+
+sources:
+  ashby:
+    - modal
+    - langchain
+    - cohere
+    # Add more Ashby company slugs here
+
+  greenhouse:
+    - openai
+    # Add more Greenhouse slugs here
+
+  lever:
+    - mistral
+    # Add more Lever slugs here
+
+  remoteok: false
+  hn_hiring: false
+  wellfound:
+    query: "AI engineer autonomous agents Python"
+    remote_only: true
+
+apply:
+  linkedin_server: "http://localhost:7433"
+  blackreach_server: "http://localhost:7432"
+
+mcp:
+  port: 7434
