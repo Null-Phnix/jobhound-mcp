@@ -208,8 +208,17 @@ def jobhound_apply_tailored(job_id: int, tailored_cv: str, cover_letter: str) ->
     if not job:
         return f"Job {job_id} not found."
 
-    from jobhound.apply import Applier
-    applier = Applier(cfg.linkedin_server, cfg.blackreach_server)
+    from jobhound.apply import Applier, ApplicantInfo
+    applier = Applier(
+        applicant=ApplicantInfo(
+            name=cfg.applicant_name,
+            email=cfg.applicant_email,
+            phone=cfg.applicant_phone,
+            linkedin=cfg.applicant_linkedin,
+        ),
+        blackreach_server=cfg.blackreach_server,
+        linkedin_server=cfg.linkedin_server,
+    )
     result = applier.submit(job, cv=tailored_cv, cover_letter=cover_letter)
 
     status = Status.APPLIED if result.success else Status.FAILED

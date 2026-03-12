@@ -1,11 +1,14 @@
 # JobHound configuration — copy to config.yaml and fill in your values
 
-profile:
-  resume: ./profile/resume.md
-  skills: ./profile/skills.yaml
+applicant:
   name: "Your Name"
   email: "you@example.com"
   phone: "+1-555-000-0000"
+  linkedin: "https://linkedin.com/in/yourhandle"  # optional
+
+profile:
+  resume: ./profile/resume.md
+  skills: ./profile/skills.yaml
 
 daemon:
   interval_hours: 6

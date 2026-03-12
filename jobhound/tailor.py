@@ -1,6 +1,12 @@
+import time
 from pathlib import Path
-from jobhound.models import Job
+
 import anthropic
+
+from jobhound.log import get_logger
+from jobhound.models import Job
+
+log = get_logger("jobhound.tailor")
 
 HAIKU = "claude-haiku-4-5-20251001"
 SONNET = "claude-sonnet-4-6"
@@ -28,14 +34,21 @@ Format your response EXACTLY like this:
 [cover letter here]"""
 
 
+def _backoff_sleep(attempt: int) -> None:
+    """Exponential backoff: 2s, 4s, 8s."""
+    delay = 2 ** (attempt + 1)
+    log.info("Tailor: retrying in %ds (attempt %d)", delay, attempt + 1)
+    time.sleep(delay)
+
+
 class Tailor:
     def __init__(self, resume_path: Path, sonnet_threshold: int = 70):
         self.resume = resume_path.read_text()
         self.sonnet_threshold = sonnet_threshold
         self.client = anthropic.Anthropic()
 
-    def generate(self, job: Job) -> tuple[str, str]:
-        """Returns (tailored_cv, cover_letter)."""
+    def generate(self, job: Job, retries: int = 3) -> tuple[str, str]:
+        """Returns (tailored_cv, cover_letter). Retries on transient errors."""
         model = SONNET if job.score >= self.sonnet_threshold else HAIKU
         prompt = PROMPT.format(
             resume=self.resume,
@@ -43,14 +56,46 @@ class Tailor:
             title=job.title,
             description=job.description[:3000],
         )
-        msg = self.client.messages.create(
-            model=model,
-            max_tokens=4096,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        raw = msg.content[0].text
-        cv, letter = self._parse(raw)
-        return cv, letter
+        last_err = None
+        for attempt in range(retries):
+            try:
+                msg = self.client.messages.create(
+                    model=model,
+                    max_tokens=6000,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                raw = msg.content[0].text
+                cv, letter = self._parse(raw)
+                if not letter:
+                    log.warning(
+                        "Tailor: response missing cover letter for %s — %s",
+                        job.company, job.title,
+                    )
+                    if attempt < retries - 1:
+                        _backoff_sleep(attempt)
+                        continue
+                log.info(
+                    "Tailor: generated for %s — %s (model=%s, cv=%d chars, letter=%d chars)",
+                    job.company, job.title, model, len(cv), len(letter),
+                )
+                return cv, letter
+            except anthropic.RateLimitError as e:
+                log.warning("Tailor: rate limit hit, backing off: %s", e)
+                last_err = e
+                _backoff_sleep(attempt)
+            except anthropic.APIStatusError as e:
+                if e.status_code >= 500:
+                    log.warning("Tailor: API server error %d, backing off: %s", e.status_code, e)
+                    last_err = e
+                    _backoff_sleep(attempt)
+                else:
+                    log.exception("Tailor: API error (non-retryable): %s", e)
+                    raise
+            except Exception as e:
+                log.exception("Tailor: unexpected error: %s", e)
+                raise
+
+        raise RuntimeError(f"Tailor: all {retries} attempts failed for {job.company} — {job.title}: {last_err}")
 
     def _parse(self, raw: str) -> tuple[str, str]:
         cv = ""
@@ -60,6 +105,6 @@ class Tailor:
             cv = parts[0].replace("=== CV ===", "").strip()
             letter = parts[1].strip()
         else:
-            # Fallback: treat whole thing as cover letter
+            log.warning("Tailor: response missing expected format markers")
             letter = raw.strip()
         return cv, letter

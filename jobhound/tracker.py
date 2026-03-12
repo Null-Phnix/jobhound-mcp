@@ -3,8 +3,8 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
-from jobhound.models import Job, Status
 
+from jobhound.models import Job, Status
 
 CREATE_SQL = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     notes        TEXT,
     raw_json     TEXT DEFAULT '{}'
 );
+CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs (status);
+CREATE INDEX IF NOT EXISTS idx_jobs_url ON jobs (url);
 """
 
 
@@ -37,11 +39,15 @@ class Tracker:
     def _conn(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path, check_same_thread=False)
         conn.row_factory = sqlite3.Row
+        # WAL mode: concurrent reads don't block writes; much better under daemon load
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA foreign_keys=ON")
         return conn
 
     def init(self):
         with self._conn() as conn:
-            conn.execute(CREATE_SQL)
+            conn.executescript(CREATE_SQL)
 
     def seen(self, url: str) -> bool:
         with self._conn() as conn:
